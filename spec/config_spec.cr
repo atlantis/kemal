@@ -16,7 +16,7 @@ describe "Config" do
   end
 
   it "sets default powered_by_header to true" do
-    Kemal::Config.new.powered_by_header.should be_true
+    Kemal::Config.new.powered_by_header?.should be_true
   end
 
   it "sets host binding" do
@@ -29,7 +29,7 @@ describe "Config" do
     config = Kemal.config
     config.add_handler CustomTestHandler.new
     Kemal.config.setup
-    config.handlers.size.should eq(7)
+    config.handlers.size.should eq(8)
   end
 
   it "toggles the shutdown message" do

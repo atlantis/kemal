@@ -13,8 +13,9 @@ module Kemal::Exceptions
   end
 
   class CustomException < Exception
-    def initialize(context : HTTP::Server::Context)
-      super "Rendered error with #{context.response.status_code}"
+    def initialize(@context : HTTP::Server::Context, message : String? = nil)
+      message ||= "Rendered error with #{context.response.status_code}"
+      super message
     end
   end
 end

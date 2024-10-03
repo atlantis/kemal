@@ -9,18 +9,23 @@ class HTTP::Server
     STORE_MAPPINGS = [Nil, String, Int32, Int64, Float64, Bool]
 
     macro finished
-      alias StoreTypes = Union({{ *STORE_MAPPINGS }})
+      alias StoreTypes = Union({{ STORE_MAPPINGS.splat }})
       @store = {} of String => StoreTypes
     end
 
     def params
-      @params ||= Kemal::ParamParser.new(@request, route_lookup.params)
+      if ws_route_found?
+        @params ||= Kemal::ParamParser.new(@request, ws_route_lookup.params)
+      else
+        @params ||= Kemal::ParamParser.new(@request, route_lookup.params)
+      end
     end
 
-    def redirect(url : String, status_code : Int32 = 302, *, body : String? = nil)
-      @response.headers.add "Location", url
+    def redirect(url : String | URI, status_code : Int32 = 302, *, body : String? = nil, close : Bool = true)
+      @response.headers.add "Location", url.to_s
       @response.status_code = status_code
       @response.print(body) if body
+      @response.close if close
     end
 
     def route

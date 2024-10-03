@@ -13,7 +13,7 @@ describe "Macros" do
     it "adds a custom handler" do
       add_handler CustomTestHandler.new
       Kemal.config.setup
-      Kemal.config.handlers.size.should eq 7
+      Kemal.config.handlers.size.should eq 8
     end
   end
 
@@ -106,6 +106,7 @@ describe "Macros" do
       request = HTTP::Request.new("GET", "/")
       response = call_request_on_app(request)
       response.status_code.should eq(200)
+
       response.headers["Content-Type"].should eq("application/octet-stream")
       response.headers["Content-Length"].should eq("18")
     end
@@ -150,7 +151,7 @@ describe "Macros" do
     it "adds HTTP::CompressHandler to handlers" do
       gzip true
       Kemal.config.setup
-      Kemal.config.handlers[4].should be_a(HTTP::CompressHandler)
+      Kemal.config.handlers[5].should be_a(HTTP::CompressHandler)
     end
   end
 

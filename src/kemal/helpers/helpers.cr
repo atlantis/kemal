@@ -1,15 +1,16 @@
-{% if compare_versions(Crystal::VERSION, "0.35.0-0") >= 0 %}
+{% if compare_versions(Crystal::VERSION, "0.35.0-0") >= 0 && !flag?(:without_zlib) %}
   require "compress/deflate"
   require "compress/gzip"
 {% end %}
 require "mime"
 
 # Adds given `Kemal::Handler` to handlers chain.
-# There are 5 handlers by default and all the custom handlers
-# goes between the first 4 and the last `Kemal::RouteHandler`.
+# There are 6 handlers by default and all the custom handlers
+# goes between the first 5 and the last `Kemal::RouteHandler`.
 #
 # - `Kemal::InitHandler`
 # - `Kemal::LogHandler`
+# - `Kemal::HeadRequestHandler`
 # - `Kemal::ExceptionHandler`
 # - `Kemal::StaticFileHandler`
 # - Here goes custom handlers
@@ -48,13 +49,13 @@ end
 # This is used to replace the built-in `Kemal::LogHandler` with a custom logger.
 #
 # A custom logger must inherit from `Kemal::BaseLogHandler` and must implement
-# `call(env)`, `write(message)` methods.
+# `call(context)`, `write(message)` methods.
 #
 # ```
 # class MyCustomLogger < Kemal::BaseLogHandler
-#   def call(env)
+#   def call(context)
 #     puts "I'm logging some custom stuff here."
-#     call_next(env) # => This calls the next handler
+#     call_next(context) # => This calls the next handler
 #   end
 #
 #   # This is used from `log` method.
@@ -71,7 +72,6 @@ end
 # ```
 def logger(logger : Kemal::BaseLogHandler)
   Kemal.config.logger = logger
-  Kemal.config.add_handler logger
 end
 
 # Enables / Disables static file serving.
@@ -134,40 +134,45 @@ def send_file(env : HTTP::Server::Context, path : String, mime_type : String? = 
   filestat = File.info(file_path)
   attachment(env, filename, disposition)
 
-  Kemal.config.static_headers.try(&.call(env.response, file_path, filestat))
+  Kemal.config.static_headers.try(&.call(env, file_path, filestat))
 
   File.open(file_path) do |file|
     if env.request.method == "GET" && env.request.headers.has_key?("Range")
       next multipart(file, env)
     end
 
-    condition = config.is_a?(Hash) && config["gzip"]? == true && filesize > minsize && Kemal::Utils.zip_types(file_path)
-    if condition && request_headers.includes_word?("Accept-Encoding", "gzip")
-      env.response.headers["Content-Encoding"] = "gzip"
-      {% if compare_versions(Crystal::VERSION, "0.35.0-0") >= 0 %}
-        Compress::Gzip::Writer.open(env.response) do |deflate|
-          IO.copy(file, deflate)
-        end
-      {% else %}
-        Gzip::Writer.open(env.response) do |deflate|
-          IO.copy(file, deflate)
-        end
-      {% end %}
-    elsif condition && request_headers.includes_word?("Accept-Encoding", "deflate")
-      env.response.headers["Content-Encoding"] = "deflate"
-      {% if compare_versions(Crystal::VERSION, "0.35.0-0") >= 0 %}
-        Compress::Deflate::Writer.open(env.response) do |deflate|
-          IO.copy(file, deflate)
-        end
-      {% else %}
-        Flate::Writer.open(env.response) do |deflate|
-          IO.copy(file, deflate)
-        end
-      {% end %}
-    else
+    {% if flag?(:without_zlib) %}
       env.response.content_length = filesize
       IO.copy(file, env.response)
-    end
+    {% else %}
+      condition = config.is_a?(Hash) && config["gzip"]? == true && filesize > minsize && Kemal::Utils.zip_types(file_path)
+      if condition && request_headers.includes_word?("Accept-Encoding", "gzip")
+        env.response.headers["Content-Encoding"] = "gzip"
+        {% if compare_versions(Crystal::VERSION, "0.35.0-0") >= 0 %}
+          Compress::Gzip::Writer.open(env.response) do |deflate|
+            IO.copy(file, deflate)
+          end
+        {% else %}
+          Gzip::Writer.open(env.response) do |deflate|
+            IO.copy(file, deflate)
+          end
+        {% end %}
+      elsif condition && request_headers.includes_word?("Accept-Encoding", "deflate")
+        env.response.headers["Content-Encoding"] = "deflate"
+        {% if compare_versions(Crystal::VERSION, "0.35.0-0") >= 0 %}
+          Compress::Deflate::Writer.open(env.response) do |deflate|
+            IO.copy(file, deflate)
+          end
+        {% else %}
+          Flate::Writer.open(env.response) do |deflate|
+            IO.copy(file, deflate)
+          end
+        {% end %}
+      else
+        env.response.content_length = filesize
+        IO.copy(file, env.response)
+      end
+    {% end %}
   end
   return
 end
@@ -216,20 +221,7 @@ private def multipart(file, env : HTTP::Server::Context)
     env.response.headers["Accept-Ranges"] = "bytes"
     env.response.headers["Content-Range"] = "bytes #{startb}-#{endb}/#{fileb}" # MUST
 
-    if startb > 1024
-      skipped = 0_i64
-      # file.skip only accepts values less or equal to 1024 (buffer size, undocumented)
-      until (increase_skipped = skipped + 1024_i64) > startb
-        file.skip(1024)
-        skipped = increase_skipped
-      end
-      if (skipped_minus_startb = skipped - startb) > 0
-        file.skip skipped_minus_startb
-      end
-    else
-      file.skip(startb)
-    end
-
+    file.seek(startb)
     IO.copy(file, env.response, content_length)
   else
     env.response.content_length = fileb
@@ -258,13 +250,13 @@ end
 # Adds headers to `Kemal::StaticFileHandler`. This is especially useful for `CORS`.
 #
 # ```
-# static_headers do |response, filepath, filestat|
+# static_headers do |env, filepath, filestat|
 #   if filepath =~ /\.html$/
-#     response.headers.add("Access-Control-Allow-Origin", "*")
+#     env.response.headers.add("Access-Control-Allow-Origin", "*")
 #   end
-#   response.headers.add("Content-Size", filestat.size.to_s)
+#   env.response.headers.add("Content-Size", filestat.size.to_s)
 # end
 # ```
-def static_headers(&headers : HTTP::Server::Response, String, File::Info -> Void)
+def static_headers(&headers : HTTP::Server::Context, String, File::Info -> Void)
   Kemal.config.static_headers = headers
 end

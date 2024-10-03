@@ -4,8 +4,8 @@ require "../src/*"
 include Kemal
 
 class CustomLogHandler < Kemal::BaseLogHandler
-  def call(env)
-    call_next env
+  def call(context)
+    call_next(context)
   end
 
   def write(message)
@@ -85,6 +85,7 @@ end
 
 Spec.after_each do
   Kemal.config.clear
+  Kemal::FilterHandler::INSTANCE.tree = Radix::Tree(Array(Kemal::FilterHandler::FilterBlock)).new
   Kemal::RouteHandler::INSTANCE.routes = Radix::Tree(Route).new
   Kemal::RouteHandler::INSTANCE.cached_routes = Hash(String, Radix::Result(Route)).new
   Kemal::WebSocketHandler::INSTANCE.routes = Radix::Tree(WebSocket).new

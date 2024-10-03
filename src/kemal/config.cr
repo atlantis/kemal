@@ -1,5 +1,5 @@
 module Kemal
-  VERSION = {{ `shards version #{__DIR__}`.chomp.stringify }}
+  VERSION = {{ `shards version "#{__DIR__}"`.chomp.stringify }}
 
   # Stores all the configuration options for a Kemal application.
   # It's a singleton and you can access it like.
@@ -20,18 +20,18 @@ module Kemal
       @ssl : OpenSSL::SSL::Context::Server?
     {% end %}
 
-    property host_binding, ssl, port, env, public_folder, logging, running
+    property app_name, host_binding, ssl, port, env, public_folder, logging, running
     property always_rescue, server : HTTP::Server?, extra_options, shutdown_message
     property serve_static : (Bool | Hash(String, Bool))
-    property static_headers : (HTTP::Server::Response, String, File::Info -> Void)?
-    property powered_by_header : Bool = true, app_name
+    property static_headers : (HTTP::Server::Context, String, File::Info -> Void)?
+    property? powered_by_header : Bool = true
 
     def initialize
       @app_name = "Kemal"
       @host_binding = "0.0.0.0"
       @port = 3000
       @env = ENV["KEMAL_ENV"]? || "development"
-      @serve_static = {"dir_listing" => false, "gzip" => true}
+      @serve_static = {"dir_listing" => false, "gzip" => true, "dir_index" => false}
       @public_folder = "./public"
       @logging = true
       @logger = nil
@@ -103,6 +103,7 @@ module Kemal
       unless @default_handlers_setup && @router_included
         setup_init_handler
         setup_log_handler
+        setup_head_request_handler
         setup_error_handler
         setup_static_file_handler
         setup_custom_handlers
@@ -126,6 +127,11 @@ module Kemal
                     Kemal::NullLogHandler.new
                   end
       HANDLERS.insert(@handler_position, @logger.not_nil!)
+      @handler_position += 1
+    end
+
+    private def setup_head_request_handler
+      HANDLERS.insert(@handler_position, Kemal::HeadRequestHandler::INSTANCE)
       @handler_position += 1
     end
 
@@ -153,13 +159,13 @@ module Kemal
     end
 
     private def setup_filter_handlers
-      FILTER_HANDLERS.each do |h|
-        HANDLERS.insert(@handler_position, h)
+      FILTER_HANDLERS.each do |handler|
+        HANDLERS.insert(@handler_position, handler)
       end
     end
   end
 
-  def self.config
+  def self.config(&)
     yield Config::INSTANCE
   end
 

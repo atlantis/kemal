@@ -23,6 +23,15 @@ describe Kemal::StaticFileHandler do
     response.body.should eq(File.read("#{__DIR__}/static/dir/test.txt"))
   end
 
+  it "should serve the 'index.html' file when a directory is requested and index serving is enabled" do
+    serve_static({"dir_index" => true})
+    response = handle HTTP::Request.new("GET", "/dir/")
+    response.status_code.should eq(200)
+    response.headers["Content-Type"].should eq "text/html"
+    response.headers["Etag"].should contain "W/\""
+    response.body.should eq(File.read("#{__DIR__}/static/dir/index.html"))
+  end
+
   it "should respond with 304 if file has not changed" do
     response = handle HTTP::Request.new("GET", "/dir/test.txt")
     response.status_code.should eq(200)
@@ -132,11 +141,11 @@ describe Kemal::StaticFileHandler do
   end
 
   it "should handle setting custom headers" do
-    headers = Proc(HTTP::Server::Response, String, File::Info, Void).new do |response, path, stat|
+    headers = Proc(HTTP::Server::Context, String, File::Info, Void).new do |env, path, stat|
       if path =~ /\.html$/
-        response.headers.add("Access-Control-Allow-Origin", "*")
+        env.response.headers.add("Access-Control-Allow-Origin", "*")
       end
-      response.headers.add("Content-Size", stat.size.to_s)
+      env.response.headers.add("Content-Size", stat.size.to_s)
     end
 
     static_headers(&headers)

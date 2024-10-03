@@ -26,7 +26,7 @@ describe "Run" do
   end
 
   it "runs without a block being specified" do
-    run(<<-CR).should eq "[test] Kemal is ready to lead at http://0.0.0.0:3000\ntrue\n"
+    run(<<-CR).should contain "[test] Kemal is running in test mode."
       Kemal.config.env = "test"
       Kemal.run
       puts Kemal.config.running
@@ -34,12 +34,17 @@ describe "Run" do
   end
 
   it "allows custom HTTP::Server bind" do
-    run(<<-CR).should eq "[test] Kemal is ready to lead at http://127.0.0.1:3000, http://0.0.0.0:3001\n"
+    run(<<-CR).should contain "[test] Kemal is running in test mode."
       Kemal.config.env = "test"
       Kemal.run do |config|
         server = config.server.not_nil!
-        server.bind_tcp "127.0.0.1", 3000, reuse_port: true
-        server.bind_tcp "0.0.0.0", 3001, reuse_port: true
+
+        {% if flag?(:windows) %}
+          server.bind_tcp "127.0.0.1", 3000
+        {% else %}
+          server.bind_tcp "127.0.0.1", 3000, reuse_port: true
+          server.bind_tcp "0.0.0.0", 3001, reuse_port: true
+        {% end %}
       end
       CR
   end
